@@ -1,7 +1,7 @@
 # Instructions
 
-Before continue, you need Symfony and Composer commands.
-[Symfony command installation](https://symfony.com/download)
+Before continue, you need Symfony and Composer commands.  
+[Symfony command installation](https://symfony.com/download)  
 [Composer command installation](https://getcomposer.org/download/)
 
  1. Clone this repository
