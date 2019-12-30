@@ -248,49 +248,146 @@ class Simulator
     private function processCalls($instant)
     {
         if(count($this->getCalls()) > 0){
-            // dump($this->calls);
-            foreach($this->calls as $key => $call){
-                $elevator = $this->findNearestElevator($call);
 
-                if(!$elevator){
-                    break;
+            // Initialize stops array
+            $stops = [];
+
+            // Merge calls in two arrays
+            $from = [];
+            $to = [];
+            foreach($this->calls as $key => $call){
+                $from[] = $call->getFrom();
+                $to[] = $call->getTo();
+            }
+
+            // Remove duplicate calls
+            $from = array_unique($from);
+            $to = array_unique($to);
+
+
+            /**
+             * Check 4 posible scenarios
+             *
+             *   1# 1 Origin  <-> 1 Destination
+             *   2# 1 Origin  <-> N Destinations
+             *   3# N Origins <-> 1 Destination
+             *   4# N Origins <-> N Destinations
+             */
+
+            if (count($from) === 1 && count($to) === 1) { // Scenario 1
+
+                $stops[] = [
+                    'from' => $from[0],
+                    'to' => $to[0]
+                ];
+
+            } else if (count($from) === 1 && count($to) > 1) { // Scenario 2
+
+                sort($to);
+
+                $previous = $from[0];
+                foreach($to as $stop){
+                    $stops[] = [
+                        'from' => $previous,
+                        'to' => $stop
+                    ];
+
+                    $previous = $stop;
                 }
 
-                $this->sendElevator($instant, $call, $elevator);
-                unset($this->calls[$key]);
+
+            } else if (count($from) > 1 && count($to) === 1) { // Scenario 3
+
+                sort($from);
+
+                foreach($from as $key => $stop){
+                    $next_key = $key+1;
+                    $next = array_key_exists($next_key, $from) ? $from[$next_key] : $to[0];
+
+                    $stops[] = [
+                        'from' => $stop,
+                        'to' => $next
+                    ];
+                }
+
+            } else if (count($from) > 1 && count($to) > 1) { // Scenario 4
+
+                sort($from);
+                rsort($to);
+
+                foreach($from as $key => $stop){
+                    $next_key = $key+1;
+                    $next = array_key_exists($next_key, $from) ? $from[$next_key] : null;
+
+                    if($next){
+                        $stops[] = [
+                            'from' => $stop,
+                            'to' => $next
+                        ];
+                    }
+                }
+
+                $previous = $from[$key];
+                foreach($to as $stop){
+                    if($previous !== $stop){
+                        $stops[] = [
+                            'from' => $previous,
+                            'to' => $stop
+                        ];
+                    }
+
+                    $previous = $stop;
+                }
+            }
+
+
+
+
+            if(count($stops) > 0) {
+                $elevator = $this->findNearestElevator($stops[0]);
+
+                if(!$elevator){
+                    return null;
+                }
+
+                if($elevator->getFloor() !== $stops[0]['from']){
+                    array_unshift($stops, [
+                        'from' => $elevator->getFloor(),
+                        'to' => $stops[0]['from']
+                    ]);
+                }
+
+                $this->sendElevator($instant, $stops, $elevator);
+                $this->setCalls([]);
             }
         }
     }
 
 
-    private function sendElevator($instant, $call, $elevator)
+    private function findStops($primaryCall)
+    {
+        $from = [];
+        $top = [];
+        $stops = [];
+        foreach($this->calls as $key => $call){
+            if($primaryCall->getFrom() === $call->getFrom()){
+
+            }
+        }
+    }
+
+
+    private function sendElevator($instant, $stops, $elevator)
     {
         $time = clone $instant;
         $elevator->setAvailable(false);
-
-        $travels = [];
-
-        // Only if elevator is in another floor
-        if($call->getFrom() !== $elevator->getFloor()){
-            $travels[] = [
-                'from' => $elevator->getFloor(),
-                'to' => $call->getFrom()
-            ];
-        }
-
-        // Add travel time to destination floor
-        $travels[] = [
-            'from' => $call->getFrom(),
-            'to' => $call->getTo()
-        ];
-
 
         $steps = [];
         $current = $time->format('U');
         $currentFloorsTraveled = $elevator->getFloorsTraveled();
 
         // Process elevator travels
-        foreach($travels as $travel){
+        foreach($stops as $travel){
             $range = range($travel['from'], $travel['to']);
             $distance = count($range) - 1;
 
@@ -321,26 +418,31 @@ class Simulator
     }
 
 
-    private function findNearestElevator($call)
+    private function findNearestElevator($stop)
     {
         $byDistance = [];
         foreach($this->getElevators() as $elevator){
             if($elevator->isAvailable()){
-                $distance = $elevator->getDistanceFromFloor($call->getFrom());
+                $distance = $elevator->getDistanceFromFloor($stop['from']);
 
                 if($distance === 0){
                     return $elevator;
                 }
 
-                if(!array_key_exists($distance, $byDistance))
-                    $byDistance[$distance] = $elevator;
+                if(!array_key_exists($distance, $byDistance)){
+                    $byDistance[$distance] = [];
+                }
+                $byDistance[$distance][$elevator->getFloorsTraveled()] = $elevator;
             }
         }
 
         if(count($byDistance) > 0){
             ksort($byDistance);
 
-            return reset($byDistance);
+            $elevators = reset($byDistance);
+            ksort($elevators);
+
+            return reset($elevators);
         }
 
         return null;
